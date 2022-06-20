@@ -16,6 +16,9 @@
 //! For a slightly more involved example, see the `examples` directory in the
 //! source repository.
 
+use memmap::Mmap;
+use std::fmt::Debug;
+
 /// Smallest acceptable value for the minimum chunk size.
 pub const MINIMUM_MIN: usize = 64;
 /// Largest acceptable value for the minimum chunk size.
@@ -40,6 +43,32 @@ pub struct Chunk {
     pub length: usize,
 }
 
+#[derive(Debug)]
+enum ByteSource<'a> {
+    Mmap(Mmap),
+    AllInMemory(&'a [u8]),
+}
+
+impl<'a> ByteSource<'a> {
+    pub fn len(&self) -> usize {
+        match &self {
+            ByteSource::Mmap(mmap) => mmap.len(),
+            ByteSource::AllInMemory(slice) => slice.len(),
+        }
+    }
+}
+
+impl<'a> std::ops::Index<usize> for ByteSource<'a> {
+    type Output = u8;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match &self {
+            ByteSource::Mmap(mmap) => &mmap[index],
+            ByteSource::AllInMemory(slice) => &slice[index],
+        }
+    }
+}
+
 ///
 /// The FastCDC chunker implementation. Use `new` to construct a new instance,
 /// and then iterate over the `Chunk`s via the `Iterator` trait.
@@ -55,9 +84,9 @@ pub struct Chunk {
 /// }
 /// ```
 ///
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct FastCDC<'a> {
-    source: &'a [u8],
+    source: ByteSource<'a>,
     bytes_processed: usize,
     bytes_remaining: usize,
     min_size: usize,
@@ -80,6 +109,10 @@ impl<'a> FastCDC<'a> {
         FastCDC::with_eof(source, min_size, avg_size, max_size, true)
     }
 
+    pub fn new_mmap(source: Mmap, min_size: usize, avg_size: usize, max_size: usize) -> Self {
+        FastCDC::new_inner(ByteSource::Mmap(source), min_size, avg_size, max_size, true)
+    }
+
     ///
     /// Construct a new `FastCDC` that will process multiple blocks of bytes.
     ///
@@ -95,6 +128,22 @@ impl<'a> FastCDC<'a> {
         max_size: usize,
         eof: bool,
     ) -> Self {
+        FastCDC::new_inner(
+            ByteSource::AllInMemory(source),
+            min_size,
+            avg_size,
+            max_size,
+            eof,
+        )
+    }
+
+    fn new_inner(
+        source: ByteSource<'a>,
+        min_size: usize,
+        avg_size: usize,
+        max_size: usize,
+        eof: bool,
+    ) -> Self {
         assert!(min_size >= MINIMUM_MIN);
         assert!(min_size <= MINIMUM_MAX);
         assert!(avg_size >= AVERAGE_MIN);
@@ -104,10 +153,11 @@ impl<'a> FastCDC<'a> {
         let bits = logarithm2(avg_size as u32);
         let mask_s = mask(bits + 1);
         let mask_l = mask(bits - 1);
+        let len = source.len();
         Self {
             source,
             bytes_processed: 0,
-            bytes_remaining: source.len(),
+            bytes_remaining: len,
             min_size,
             avg_size,
             max_size,
