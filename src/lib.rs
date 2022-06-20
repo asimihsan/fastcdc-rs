@@ -358,6 +358,7 @@ const TABLE: [u32; 256] = [
 mod tests {
     use super::*;
     use std::fs;
+    use std::fs::File;
 
     #[test]
     fn test_logarithm2() {
@@ -471,6 +472,35 @@ mod tests {
         assert!(read_result.is_ok());
         let contents = read_result.unwrap();
         let chunker = FastCDC::new(&contents, 8192, 16384, 32768);
+        let results: Vec<Chunk> = chunker.collect();
+        assert_eq!(results.len(), 6);
+        assert_eq!(results[0].hash, 1527472128);
+        assert_eq!(results[0].offset, 0);
+        assert_eq!(results[0].length, 22366);
+        assert_eq!(results[1].hash, 1174757376);
+        assert_eq!(results[1].offset, 22366);
+        assert_eq!(results[1].length, 8282);
+        assert_eq!(results[2].hash, 2687197184);
+        assert_eq!(results[2].offset, 30648);
+        assert_eq!(results[2].length, 16303);
+        assert_eq!(results[3].hash, 1210105856);
+        assert_eq!(results[3].offset, 46951);
+        assert_eq!(results[3].length, 18696);
+        assert_eq!(results[4].hash, 2984739645);
+        assert_eq!(results[4].offset, 65647);
+        assert_eq!(results[4].length, 32768);
+        assert_eq!(results[5].hash, 1121740051);
+        assert_eq!(results[5].offset, 98415);
+        assert_eq!(results[5].length, 11051);
+    }
+
+    #[test]
+    fn test_sekien_16k_chunks_mmap() {
+        let input = unsafe {
+            Mmap::map(&File::open("test/fixtures/SekienAkashita.jpg").unwrap())
+                .expect("could not mmap file")
+        };
+        let chunker = FastCDC::new_mmap(input, 8192, 16384, 32768);
         let results: Vec<Chunk> = chunker.collect();
         assert_eq!(results.len(), 6);
         assert_eq!(results[0].hash, 1527472128);
